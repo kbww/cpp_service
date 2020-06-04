@@ -50,6 +50,14 @@ int main(int argc, char const *argv[]) {
         ([](const request &req, response &res, string filename){
             sendImage(res, filename);
     });
+
+    // Route handle for the about page
+    CROW_ROUTE(app, "/about")
+        ([](const request &req, response &res){
+            sendHtml(res, "about");
+    });
+
+    //Route handle for the landing page
     CROW_ROUTE(app, "/")
         ([](const request &req, response &res){
             sendHtml(res, "index");
