@@ -1,6 +1,36 @@
 #include "crow_all.h"
+#include <fstream>
+#include <iostream>
+#include <vector>
+#include <cstdlib>
+#include <boost/filesystem.hpp>
+
+#include <bsoncxx/builder/stream/document.hpp>
+#include <bsoncxx/json.hpp>
+#include <bsoncxx/oid.hpp>
+
+#include <mongocxx/client.hpp>
+#include <mongocxx/stdx.hpp>
+#include <mongocxx/uri.hpp>
+#include <mongocxx/instance.hpp>
+
+using bsoncxx::builder::stream::close_array;
+using bsoncxx::builder::stream::close_document;
+using bsoncxx::builder::stream::document;
+using bsoncxx::builder::stream::finalize;
+using bsoncxx::builder::stream::open_array;
+using bsoncxx::builder::stream::open_document;
+using bsoncxx::builder::basic::kvp;
+using bsoncxx::builder::basic::make_document;
+
+using mongocxx::cursor;
 using namespace std;
 using namespace crow;
+using namespace crow::mustache;
+
+string getView(const string &filename, context &x){
+    return load("../public/" + filename + ".html").render(x);
+}
 
 void sendFile(response &res, string filename, string contentType){
     ifstream in("../public/" + filename, ifstream::in);
@@ -36,6 +66,16 @@ void sendStyle(response & res, string filename){
 
 int main(int argc, char const *argv[]) {
     crow::SimpleApp app;
+    // set the location of the mustache template
+    // without set_base() mustache won't work
+    set_base(".");
+    mongocxx::instance inst{};
+    // Connection string
+    string mongoConnect = std::string(getenv("MONGODB_URI"));
+    mongocxx::client conn{mongocxx::uri{mongoConnect}};
+    // Database and collection
+    auto collection = conn["heroku_4540n357"]["contacts"];
+
     CROW_ROUTE(app, "/styles/<string>")
         ([](const request &req, response &res, string filename){
             sendStyle(res, filename);
@@ -62,6 +102,31 @@ int main(int argc, char const *argv[]) {
         ([](const request &req, response &res){
             sendHtml(res, "index");
     });
+
+    // route handler for single record
+    // use: http://localhost:8080/contact/<email>
+    CROW_ROUTE(app, "/contact/<string>")
+        ([&collection](string email){
+            auto doc = collection.find_one(make_document(kvp("email", email)));
+            return crow::response(bsoncxx::to_json(doc.value().view()));
+        });
+
+    CROW_ROUTE(app, "/contacts")
+        ([&collection](){
+            mongocxx::options::find ops;
+            ops.skip(9);
+            // Limit the collection to first 10 documents in database
+            ops.limit(10);
+            auto docs = collection.find({}, ops);
+            crow::json::wvalue dto;
+            vector<crow::json::rvalue> contacts;
+            contacts.reserve(10);
+            for(auto doc : docs){
+                contacts.push_back(json::load(bsoncxx::to_json(doc)));
+            }
+            dto["contacts"] = contacts;
+            return getView("contacts", dto);
+        });
     char* port = getenv("PORT");
     uint16_t iPort = static_cast<uint16_t>(port != NULL ? stoi(port) : 18080);
     cout << "PORT= " << iPort << "\n";
