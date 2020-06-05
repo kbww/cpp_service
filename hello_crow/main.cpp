@@ -28,8 +28,11 @@ using namespace std;
 using namespace crow;
 using namespace crow::mustache;
 
-string getView(const string &filename, context &x){
-    return load("../public/" + filename + ".html").render(x);
+void getView(response &res, const string &filename, context &x){
+    res.set_header("Content-Type", "text/html");
+    auto text = load("../public/" + filename + ".html").render(x);
+    res.write(text);
+    res.end();
 }
 
 void sendFile(response &res, string filename, string contentType){
@@ -62,6 +65,12 @@ void sendScript(response & res, string filename){
 
 void sendStyle(response & res, string filename){
     sendFile(res, "styles/" + filename, "text/css");
+}
+
+void notFound(response &res, const string &message){
+    res.code = 404;
+    res.write(message + ": Not Found");
+    res.end();
 }
 
 int main(int argc, char const *argv[]) {
@@ -97,24 +106,30 @@ int main(int argc, char const *argv[]) {
             sendHtml(res, "about");
     });
 
-    //Route handle for the landing page
-    CROW_ROUTE(app, "/")
-        ([](const request &req, response &res){
-            sendHtml(res, "index");
-    });
-
     // route handler for single record
     // use: http://localhost:8080/contact/<email>
     CROW_ROUTE(app, "/contact/<string>")
-        ([&collection](string email){
+        ([&collection](const request &req, response &res, string email){
             auto doc = collection.find_one(make_document(kvp("email", email)));
             crow::json::wvalue dto;
             dto["contact"] = json::load(bsoncxx::to_json(doc.value().view()));
-            return getView("contact", dto);
+            getView(res, "contact", dto);
+        });
+
+    CROW_ROUTE(app, "/contact/<string>/<string>")
+        ([&collection](const request &req, response &res, string firstname, string lastname){
+            auto doc = collection.find_one(
+                make_document(kvp("firstName", firstname), kvp("lastName", lastname)));
+            if(!doc){
+                return notFound(res, "Contact");
+            }
+            crow::json::wvalue dto;
+            dto["contact"] = json::load(bsoncxx::to_json(doc.value().view()));
+            getView(res, "contact", dto);
         });
 
     CROW_ROUTE(app, "/contacts")
-        ([&collection](){
+        ([&collection](const request &req, response &res){
             mongocxx::options::find ops;
             ops.skip(9);
             // Limit the collection to first 10 documents in database
@@ -127,8 +142,84 @@ int main(int argc, char const *argv[]) {
                 contacts.push_back(json::load(bsoncxx::to_json(doc)));
             }
             dto["contacts"] = contacts;
-            return getView("contacts", dto);
+            getView(res, "contacts", dto);
         });
+
+    // Render response to JSON instead of a webpage
+    CROW_ROUTE(app, "/api/contacts")
+        ([&collection](const request &req){
+            auto skipVal = req.url_params.get("skip");
+            auto limitVal = req.url_params.get("limit");
+            int skip = skipVal ? stoi(skipVal) : 0;
+            int limit = limitVal ? stoi(limitVal) : 10;
+            mongocxx::options::find ops;
+            ops.skip(skip);
+            // Limit the collection
+            ops.limit(limit);
+            auto docs = collection.find({}, ops);
+            vector<crow::json::rvalue> contacts;
+            contacts.reserve(10);
+            for(auto doc : docs){
+                contacts.push_back(json::load(bsoncxx::to_json(doc)));
+            }
+            crow::json::wvalue dto;
+            dto["contacts"] = contacts;
+            return crow::response{dto};
+        });
+
+    // Here route order is important
+    CROW_ROUTE(app, "/add/<int>/<int>")
+     ([](const request &req, response &res, int a , int b){
+         res.set_header("Content-Type", "text/plain");
+         ostringstream os;
+         os << "Integer: " << a << " + " << b << " = " << a + b << "\n";
+         res.write(os.str());
+         res.end();
+     });
+
+     CROW_ROUTE(app, "/add/<double>/<double>")
+      ([](const request &req, response &res, double a , double b){
+          res.set_header("Content-Type", "text/plain");
+          ostringstream os;
+          os << "Double: " << a << " + " << b << " = " << a + b << "\n";
+          res.write(os.str());
+          res.end();
+      });
+
+      CROW_ROUTE(app, "/add/<string>/<string>")
+       ([](const request &req, response &res, string a , string b){
+           res.set_header("Content-Type", "text/plain");
+           ostringstream os;
+           os << "String: " << a << " + " << b << " = " << a + b << "\n";
+           res.write(os.str());
+           res.end();
+       });
+
+    CROW_ROUTE(app, "/query")
+        ([](const request &req, response &res){
+            auto firstname = req.url_params.get("firstname");
+            auto lastname = req.url_params.get("lastname");
+            ostringstream os;
+            os << "Hello " << (firstname ? firstname : "") <<
+                " " << (lastname ? lastname : "") << endl;
+            res.set_header("Content-Type", "text/plain");
+            res.write(os.str());
+            res.end();
+        });
+
+    CROW_ROUTE(app, "/api").methods(HTTPMethod::Post, HTTPMethod::Get, HTTPMethod::Put)
+    ([](const request &req, response &res){
+        string method = method_name(req.method);
+        res.set_header("Content-Type", "text/plain");
+        res.write(method + " api");
+        res.end();
+    });
+
+    //Route handle for the landing page
+    CROW_ROUTE(app, "/")
+        ([](const request &req, response &res){
+            sendHtml(res, "index");
+    });
     char* port = getenv("PORT");
     uint16_t iPort = static_cast<uint16_t>(port != NULL ? stoi(port) : 18080);
     cout << "PORT= " << iPort << "\n";
