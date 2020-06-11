@@ -12,3 +12,14 @@ MongoDB as database
 
 Heroku for deployment
 
+##  Endpoints
+```
+/chat
+
+/api
+
+/api/contact
+
+/query
+```
+
