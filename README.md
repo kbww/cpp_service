@@ -18,8 +18,14 @@ Heroku for deployment
 
 /api
 
-/api/contact
+/api/contacts
 
 /query
+
+/contacts
+
+/contact/{string}
+
+/contact/{string}/{string}
 ```
 
