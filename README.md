@@ -1,18 +1,11 @@
-# C++ webserver and API
+## C++ webserver with API endpoints
 
-## Details
+### Details and requirements
 
-C++
+`C++, Crow Framework, Docker MongoDB, Heroku for deployment (or anything else that works for you`
 
-Crow Framework
+### Endpoints
 
-Docker
-
-MongoDB as database
-
-Heroku for deployment
-
-##  Endpoints
 ```
 /chat
 
@@ -28,4 +21,3 @@ Heroku for deployment
 
 /contact/{string}/{string}
 ```
-
